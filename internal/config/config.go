@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"path/filepath"
+	"errors"
 )
 
 const configFileName = ".gatorconfig.json"
@@ -21,6 +22,10 @@ type Config struct {
 // SetUser updates CurrentUserName and writes the new config to disk.
 // Returns an error if marshalling or writing fails.
 func (cfgPtr *Config) SetUser(userName string) error {
+
+	if len(userName) == 0 {
+		return errors.New("error: userName must be atleast 1 char")
+	}
 
     cfgPtr.CurrentUserName = userName
 
