@@ -1,41 +1,75 @@
+// Package config provides functionality for reading and writing the application's
+// configuration file, including database credentials and the current user.
 package config
 
 import (
-	"fmt"
 	"os"
+	"encoding/json"
+	"io"
+	"path/filepath"
 )
 
+const configFileName = ".gatorconfig.json"
+
+// Config represents the application's configuration file structure.
 type Config struct {
 	DbURL           string `json:"db_url"`
 	CurrentUserName string `json:"current_user_name"`
 }
 
-func Read() Config {
-	// Export a Read function that reads the JSON file found at ~/.gatorconfig.json and returns a Config struct. CHECK!
-	// It should read the file from the HOME directory, then decode the JSON string into a new Config struct.
-	// I used os.UserHomeDir to get the location of HOME.
+
+// SetUser updates CurrentUserName and writes the new config to disk.
+// Returns an error if marshalling or writing fails.
+func (cfgPtr *Config) SetUser(userName string) error {
+
+    cfgPtr.CurrentUserName = userName
+
+    jsonData, err := json.MarshalIndent(cfgPtr, "", "  ")
+    if err != nil {
+        return err
+    }
+
+    filePath, err := getConfigFilePath()
+    if err != nil {
+        return err
+    }
+
+    return os.WriteFile(filePath, jsonData, 0644)
+}
+
+// getConfigFilePath returns the absolute path to the configuration file
+// in the user's home directory.
+func getConfigFilePath() (string, error) {
 	homePath, err := os.UserHomeDir()
-
 	if err != nil {
-		fmt.Println(err)
-		return Config{}
+		return "", err
+	}
+	configPath := filepath.Join(homePath, configFileName)
+	return configPath, nil
+}
+
+// Read loads the configuration from the JSON file in the user's home directory.
+// Returns the Config struct and an error if there are issues reading or unmarshalling.
+func Read() (Config, error) {
+	jsonConfigPath, err := getConfigFilePath()
+	if err != nil {
+		return Config{}, err
 	}
 
-	jsonPath := homePath + "/.gatorconfig.json"
-
-	fmt.Printf("DBG: jsonPath = %v \n", jsonPath)
-	// Open our jsonFile
-	jsonFile, err := os.Open(jsonPath)
-	// if we os.Open returns an error then handle it
+	jsonFile, err := os.Open(jsonConfigPath)
 	if err != nil {
-		fmt.Println(err)
+		return Config{}, err
 	}
-
-	fmt.Println("DBG: Successfully Opened .gatorconfig.json")
-	// defer the closing of our jsonFile so that we can parse it later on
 	defer jsonFile.Close()
 
+	byteValue, err := io.ReadAll(jsonFile)
+	if err != nil {
+		return Config{}, err
+	}
 
-
-	return Config{}
+	var cfg Config
+	if err := json.Unmarshal(byteValue, &cfg); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
 }
