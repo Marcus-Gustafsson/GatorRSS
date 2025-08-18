@@ -77,6 +77,7 @@ func main() {
 	// Register the login handler.
 	commands.register("login", handlerLogin)
 
+
 	// Get command-line arguments.
 	args := os.Args
 
