@@ -281,13 +281,10 @@ func handlerAgg(stPtr *state, cmd command) error{
 // On success, prints the new feed's details. Returns an error if user lookup or feed
 // creation fails, or if arguments are missing.
 func handlerAddFeed(stPtr *state, cmd command) error {
-
-    // Ensure feed name and URL are provided
     if len(cmd.Args) != 2 {
         return errors.New("handlerAddFeed: expects two arguments: the feed's name and URL")
     }
 
-    // Fetch the current user by user name in config
     currentUser, err := stPtr.dbPtr.GetUser(
         context.Background(),
         sql.NullString{String: stPtr.cfgPtr.CurrentUserName, Valid: true},
@@ -296,7 +293,6 @@ func handlerAddFeed(stPtr *state, cmd command) error {
         return fmt.Errorf("handlerAddFeed: error retrieving the current user: %w", err)
     }
 
-    // Create and associate the new feed with the current user
     newFeed, err := stPtr.dbPtr.CreateFeed(
         context.Background(),
         database.CreateFeedParams{
@@ -315,6 +311,36 @@ func handlerAddFeed(stPtr *state, cmd command) error {
     fmt.Println("New feed has been created:", newFeed)
     return nil
 }
+
+// handlerGetFeeds retrieves all RSS feeds from the database and prints each feed’s
+// name, URL, and its associated creator’s username to the console. It fetches the
+// user for each feed using the user’s UUID field. Returns an error if retrieving
+// feeds or users fails, or if no feeds are found.
+func handlerGetFeeds(stPtr *state, cmd command) error{
+
+    feeds, err := stPtr.dbPtr.GetFeeds(context.Background())
+    if err != nil {
+        return fmt.Errorf("handlerGetFeeds: couldn't retrieve all feeds from 'feeds' table: %w", err)  
+    }
+
+    if len(feeds) == 0{
+        return errors.New("handlerGetFeeds: no feeds in the retrieved feed slice")
+    }
+
+    for _, feed := range feeds{
+
+        feedUser, err := stPtr.dbPtr.GetUserByUUID(context.Background(), feed.UserID.UUID)
+        if err != nil {
+            return fmt.Errorf("handlerGetFeeds: couldn't retrieve user with uuid from 'users' table: %w", err)  
+        }
+
+        fmt.Printf("Name: %v\nUrl: %v\nUser name: %v\n", feed.Name, feed.Url, feedUser.Name.String)
+    }
+
+    return nil
+}
+
+
 
 func main() {
 	// Read configuration from file.
@@ -348,6 +374,8 @@ func main() {
     cmds.register("agg", handlerAgg)
     // Register "addfeed" to be able to add feed from given url to current logged in user
     cmds.register("addfeed", handlerAddFeed)
+    // Register "feeds" cmd which retrieves all the feeds for the current user
+    cmds.register("feeds", handlerGetFeeds)
 
 
 	// Get command-line arguments.
