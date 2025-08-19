@@ -23,7 +23,7 @@ SELECT
     inserted_feed_follow.id, inserted_feed_follow.created_at, inserted_feed_follow.updated_at, inserted_feed_follow.user_id, inserted_feed_follow.feed_id,
     feeds.name AS feed_name,
     users.name AS user_name
-FROM inserted_feed_follow
+FROM inserted_feed_follow -- Uses the newly inserted record/row from CTE above!
 INNER JOIN feeds ON inserted_feed_follow.feed_id = feeds.id
 INNER JOIN users ON inserted_feed_follow.user_id = users.id
 `
@@ -46,6 +46,8 @@ type CreateFeedFollowRow struct {
 	UserName  sql.NullString
 }
 
+// This query creates a new feed follow record and returns detailed information about it
+// Uses a CTE (Common Table Expression) to first insert a new row and save it as a special variable/name, then join with related tables
 func (q *Queries) CreateFeedFollow(ctx context.Context, arg CreateFeedFollowParams) (CreateFeedFollowRow, error) {
 	row := q.db.QueryRowContext(ctx, createFeedFollow,
 		arg.ID,
@@ -65,6 +67,21 @@ func (q *Queries) CreateFeedFollow(ctx context.Context, arg CreateFeedFollowPara
 		&i.UserName,
 	)
 	return i, err
+}
+
+const deleteFeedFollow = `-- name: DeleteFeedFollow :exec
+
+DELETE FROM feed_follows WHERE feed_id = $1 AND user_id = $2
+`
+
+type DeleteFeedFollowParams struct {
+	FeedID uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) DeleteFeedFollow(ctx context.Context, arg DeleteFeedFollowParams) error {
+	_, err := q.db.ExecContext(ctx, deleteFeedFollow, arg.FeedID, arg.UserID)
+	return err
 }
 
 const getFeedFollowsForUser = `-- name: GetFeedFollowsForUser :many

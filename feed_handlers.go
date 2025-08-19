@@ -2,7 +2,6 @@ package main
 
 import (
     "context"
-    "database/sql"
     "encoding/xml"
     "errors"
     "fmt"
@@ -74,38 +73,15 @@ func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error){
     return rssFeedPtr, nil
 }
 
-// handlerAgg handles the "agg" command by fetching and displaying an RSS feed.
-// This is a test function to verify our RSS parsing works correctly.
-func handlerAgg(stPtr *state, cmd command) error{
-
-    // Fetch the RSS feed from the specified URL using our fetchFeed function
-    rssFeedPtr, err := fetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
-    if err != nil {
-        return fmt.Errorf("handlerAgg: error fetching the feed: %w", err)
-    }
-
-    // Print the entire RSS feed struct to console as required by assignment
-    fmt.Println("Result:", *rssFeedPtr)
-
-    return nil
-}
-
 // handlerAddFeed creates a new RSS feed record in the database, associated with the
-// currently logged-in user. It expects exactly two arguments: the feed's name and its URL.
-// On success, prints the new feed's details. Returns an error if user lookup or feed
-// creation fails, or if arguments are missing.
-func handlerAddFeed(stPtr *state, cmd command) error {
+// provided user (obtained through middleware). It expects exactly two arguments: 
+// the feed's name and its URL. On success, prints the new feed's details and 
+// automatically creates a feed follow relationship. Returns an error if feed
+// creation or feed follow creation fails, or if arguments are missing.
+func handlerAddFeed(stPtr *state, cmd command, currentUser database.User) error {
 
     if len(cmd.Args) != 2 {
         return errors.New("handlerAddFeed: expects two arguments: the feed's name and URL")
-    }
-
-    currentUser, err := stPtr.dbPtr.GetUser(
-        context.Background(),
-        sql.NullString{String: stPtr.cfgPtr.CurrentUserName, Valid: true},
-    )
-    if err != nil {
-        return fmt.Errorf("handlerAddFeed: error retrieving the current user: %w", err)
     }
 
     newFeed, err := stPtr.dbPtr.CreateFeed(
@@ -175,23 +151,15 @@ func handlerGetFeeds(stPtr *state, cmd command) error{
     return nil
 }
 
-// handlerFollow creates a feed follow relationship between the current user and
-// a feed specified by URL. It expects exactly one argument: the feed's URL.
-// On success, prints confirmation with the user and feed names. Returns an error
-// if the user lookup fails, the feed URL is not found, or feed follow creation fails.
-func handlerFollow(stPtr *state, cmd command) error {
+// handlerFollow creates a feed follow relationship between the provided user
+// (obtained through middleware) and a feed specified by URL. It expects exactly 
+// one argument: the feed's URL. On success, prints confirmation with the user 
+// and feed names. Returns an error if the feed URL is not found or feed follow 
+// creation fails.
+func handlerFollow(stPtr *state, cmd command, currentUser database.User) error {
     // Check argument count first, like other handlers
     if len(cmd.Args) != 1 {
         return errors.New("handlerFollow: expects a single argument, the feed URL")
-    }
-
-    // Get current user with proper error wrapping
-    currentUser, err := stPtr.dbPtr.GetUser(
-        context.Background(),
-        sql.NullString{String: stPtr.cfgPtr.CurrentUserName, Valid: true},
-    )
-    if err != nil {
-        return fmt.Errorf("handlerFollow: error retrieving current user: %w", err)
     }
 
     // Get feed by URL with proper error wrapping
@@ -219,20 +187,11 @@ func handlerFollow(stPtr *state, cmd command) error {
 }
 
 
-// handlerListFeedFollows retrieves and displays all feeds that the current user
-// is following. It prints the user's name and a list of followed feed names.
-// If no feeds are being followed, displays an appropriate message. Returns an
-// error if user lookup or feed follow retrieval fails.
-func handlerListFeedFollows(stPtr *state, cmd command) error {
-    // Get current user with proper error wrapping
-    currentUser, err := stPtr.dbPtr.GetUser(
-        context.Background(),
-        sql.NullString{String: stPtr.cfgPtr.CurrentUserName, Valid: true},
-    )
-    if err != nil {
-        return fmt.Errorf("handlerListFeedFollows: error retrieving current user: %w", err)
-    }
-
+// handlerListFeedFollows retrieves and displays all feeds that the provided user
+// (obtained through middleware) is following. It prints the user's name and a 
+// list of followed feed names. If no feeds are being followed, displays an 
+// appropriate message. Returns an error if feed follow retrieval fails.
+func handlerListFeedFollows(stPtr *state, cmd command, currentUser database.User) error {
     // Get feed follows with proper error wrapping
     feedFollows, err := stPtr.dbPtr.GetFeedFollowsForUser(context.Background(), currentUser.ID)
     if err != nil {
@@ -252,4 +211,31 @@ func handlerListFeedFollows(stPtr *state, cmd command) error {
     }
 
     return nil
+}
+
+
+// handlerUnfollow removes a feed follow relationship between the provided user
+// (obtained through middleware) and a feed specified by URL. It expects exactly
+// one argument: the feed's URL. On success, prints confirmation with the feed
+// name. Returns an error if the feed URL is not found or feed follow deletion fails.
+func handlerUnfollow(stPtr *state, cmd command, user database.User) error {
+	if len(cmd.Args) != 1 {
+		return fmt.Errorf("usage: %s <feed_url>", cmd.Name)
+	}
+
+	feed, err := stPtr.dbPtr.GetFeedByURL(context.Background(), cmd.Args[0])
+	if err != nil {
+		return fmt.Errorf("handlerUnfollow: couldn't get feed: %w", err)
+	}
+
+	err = stPtr.dbPtr.DeleteFeedFollow(context.Background(), database.DeleteFeedFollowParams{
+		UserID: user.ID,
+		FeedID: feed.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("handlerUnfollow: couldn't delete feed follow: %w", err)
+	}
+
+	fmt.Printf("%s unfollowed successfully!\n", feed.Name)
+	return nil
 }

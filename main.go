@@ -17,14 +17,14 @@ func main() {
         log.Fatal(err)
     }
 
-    db, err := sql.Open("postgres", cfg.DbURL)
+    dbPtr, err := sql.Open("postgres", cfg.DbURL)
     if err != nil {
         log.Fatal(err)
     }
-    defer db.Close()
+    defer dbPtr.Close()
 
     // Initialize State with config and database pointer.
-    st := state{cfgPtr: &cfg, dbPtr: database.New(db)}
+    st := state{cfgPtr: &cfg, dbPtr: database.New(dbPtr)}
 
     // Initialize Cmds with a map to store handlers.
     cmds := cmds{FunctionMap: make(map[string]func(*state, command) error)}
@@ -56,7 +56,7 @@ func main() {
 
 // registerCommands registers all available command handlers
 func registerCommands(cmds *cmds) {
-    
+
     // User commands
     cmds.register("login", handlerLogin)
     cmds.register("register", handlerRegister)
@@ -65,8 +65,10 @@ func registerCommands(cmds *cmds) {
     
     // Feed commands
     cmds.register("agg", handlerAgg)
-    cmds.register("addfeed", handlerAddFeed)
+	cmds.register("addfeed", middlewareLoggedIn(handlerAddFeed))
     cmds.register("feeds", handlerGetFeeds)
-    cmds.register("follow", handlerFollow)
-    cmds.register("following", handlerListFeedFollows)
+	cmds.register("follow", middlewareLoggedIn(handlerFollow))
+	cmds.register("following", middlewareLoggedIn(handlerListFeedFollows))
+    cmds.register("unfollow", middlewareLoggedIn(handlerUnfollow))
+	cmds.register("browse", middlewareLoggedIn(handlerBrowse))
 }
