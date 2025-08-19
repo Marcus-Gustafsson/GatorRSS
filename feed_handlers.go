@@ -10,7 +10,7 @@ import (
     "net/http"
     "time"
 
-    "github.com/Marcus-Gustafsson/GatorRSS/internal/database"
+    "github.com/Marcus-Gustafsson/gator/internal/database"
     "github.com/google/uuid"
 )
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"github.com/Marcus-Gustafsson/GatorRSS/internal/database"
+	"github.com/Marcus-Gustafsson/gator/internal/database"
 )
 
 // handlerBrowse retrieves and displays posts for the current user with an optional limit

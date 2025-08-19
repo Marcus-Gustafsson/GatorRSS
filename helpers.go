@@ -2,7 +2,7 @@ package main
 
 import (
     "fmt"
-    "github.com/Marcus-Gustafsson/GatorRSS/internal/database"
+    "github.com/Marcus-Gustafsson/gator/internal/database"
 	"context"
 	"database/sql"
 )

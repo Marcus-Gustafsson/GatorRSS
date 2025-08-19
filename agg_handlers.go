@@ -7,7 +7,7 @@ import (
 	"strings"
 	"fmt"
 	"log"
-	"github.com/Marcus-Gustafsson/GatorRSS/internal/database"
+	"github.com/Marcus-Gustafsson/gator/internal/database"
 	"github.com/google/uuid"
 )
 

@@ -1,4 +1,4 @@
-module github.com/Marcus-Gustafsson/GatorRSS
+module github.com/Marcus-Gustafsson/gator
 
 go 1.24.5
 

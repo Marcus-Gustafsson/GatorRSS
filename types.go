@@ -1,8 +1,8 @@
 package main
 
 import (
-    "github.com/Marcus-Gustafsson/GatorRSS/internal/config"
-    "github.com/Marcus-Gustafsson/GatorRSS/internal/database"
+    "github.com/Marcus-Gustafsson/gator/internal/config"
+    "github.com/Marcus-Gustafsson/gator/internal/database"
 )
 
 // state holds a pointer to the application's configuration.
