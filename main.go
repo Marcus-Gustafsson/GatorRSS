@@ -36,6 +36,7 @@ type cmds struct{
     FunctionMap map[string]func(*state, command) error
 }
 
+// RSSFeed represents the structure of an RSS feed with channel information and items.
 type RSSFeed struct {
 	Channel struct {
 		Title       string    `xml:"title"`
@@ -45,6 +46,7 @@ type RSSFeed struct {
 	} `xml:"channel"`
 }
 
+// RSSItem represents a single item/article within an RSS feed.
 type RSSItem struct {
 	Title       string `xml:"title"`
 	Link        string `xml:"link"`
@@ -110,7 +112,7 @@ func handlerLogin(stPtr *state, cmd command) error {
 
 // handlerRegister creates a new user in the database with the given username
 // and sets the new user as current in the config.
-// If the username already exist the process exits with code 1.
+// If the username already exists, the process exits with code 1.
 func handlerRegister(stPtr *state, cmd command) error {
 
     // Make sure a username was provided and only one argument is present.
@@ -155,7 +157,8 @@ func handlerRegister(stPtr *state, cmd command) error {
     }
 
     // Print out the new user details for your own debugging.
-    fmt.Printf("DBG: User created: %v\n", newUser)
+    fmt.Println("User created successfully:")
+    printUser((newUser))
 
     return nil
 }
@@ -281,6 +284,7 @@ func handlerAgg(stPtr *state, cmd command) error{
 // On success, prints the new feed's details. Returns an error if user lookup or feed
 // creation fails, or if arguments are missing.
 func handlerAddFeed(stPtr *state, cmd command) error {
+
     if len(cmd.Args) != 2 {
         return errors.New("handlerAddFeed: expects two arguments: the feed's name and URL")
     }
@@ -308,7 +312,27 @@ func handlerAddFeed(stPtr *state, cmd command) error {
         return fmt.Errorf("handlerAddFeed: failed to create new feed: %w", err)
     }
 
-    fmt.Println("New feed has been created:", newFeed)
+
+    feedFollow, err := stPtr.dbPtr.CreateFeedFollow(context.Background(), database.CreateFeedFollowParams{
+    ID:        uuid.New(),
+    CreatedAt: time.Now(),
+    UpdatedAt: time.Now(),
+    UserID:    currentUser.ID,
+    FeedID:    newFeed.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("handlerAddFeed: couldn't create feed follow: %w", err)
+	}
+
+	fmt.Println("Feed created successfully:")
+
+    fmt.Println("DBG: New feed has been created:")
+    printFeed(newFeed, currentUser)
+
+    fmt.Println("Feed followed successfully:")
+	printFeedFollow(feedFollow.UserName.String, feedFollow.FeedName)
+	fmt.Println("=====================================")
+
     return nil
 }
 
@@ -333,12 +357,118 @@ func handlerGetFeeds(stPtr *state, cmd command) error{
         if err != nil {
             return fmt.Errorf("handlerGetFeeds: couldn't retrieve user with uuid from 'users' table: %w", err)  
         }
-
-        fmt.Printf("Name: %v\nUrl: %v\nUser name: %v\n", feed.Name, feed.Url, feedUser.Name.String)
+        printFeed(feed, feedUser)
+		fmt.Println("=====================================")
     }
 
     return nil
 }
+
+// handlerFollow creates a feed follow relationship between the current user and
+// a feed specified by URL. It expects exactly one argument: the feed's URL.
+// On success, prints confirmation with the user and feed names. Returns an error
+// if the user lookup fails, the feed URL is not found, or feed follow creation fails.
+func handlerFollow(stPtr *state, cmd command) error {
+    // Check argument count first, like other handlers
+    if len(cmd.Args) != 1 {
+        return errors.New("handlerFollow: expects a single argument, the feed URL")
+    }
+
+    // Get current user with proper error wrapping
+    currentUser, err := stPtr.dbPtr.GetUser(
+        context.Background(),
+        sql.NullString{String: stPtr.cfgPtr.CurrentUserName, Valid: true},
+    )
+    if err != nil {
+        return fmt.Errorf("handlerFollow: error retrieving current user: %w", err)
+    }
+
+    // Get feed by URL with proper error wrapping
+    feed, err := stPtr.dbPtr.GetFeedByURL(context.Background(), cmd.Args[0])
+    if err != nil {
+        return fmt.Errorf("handlerFollow: couldn't get feed by URL: %w", err)
+    }
+
+    // Create feed follow with proper error wrapping
+    feedFollow, err := stPtr.dbPtr.CreateFeedFollow(context.Background(), database.CreateFeedFollowParams{
+        ID:        uuid.New(),
+        CreatedAt: time.Now(),
+        UpdatedAt: time.Now(),
+        UserID:    currentUser.ID,
+        FeedID:    feed.ID,
+    })
+    if err != nil {
+        return fmt.Errorf("handlerFollow: couldn't create feed follow: %w", err)
+    }
+
+    // Print success message
+    fmt.Println("Feed follow created:")
+    printFeedFollow(feedFollow.UserName.String, feedFollow.FeedName)
+    return nil
+}
+
+
+// handlerListFeedFollows retrieves and displays all feeds that the current user
+// is following. It prints the user's name and a list of followed feed names.
+// If no feeds are being followed, displays an appropriate message. Returns an
+// error if user lookup or feed follow retrieval fails.
+func handlerListFeedFollows(stPtr *state, cmd command) error {
+    // Get current user with proper error wrapping
+    currentUser, err := stPtr.dbPtr.GetUser(
+        context.Background(),
+        sql.NullString{String: stPtr.cfgPtr.CurrentUserName, Valid: true},
+    )
+    if err != nil {
+        return fmt.Errorf("handlerListFeedFollows: error retrieving current user: %w", err)
+    }
+
+    // Get feed follows with proper error wrapping
+    feedFollows, err := stPtr.dbPtr.GetFeedFollowsForUser(context.Background(), currentUser.ID)
+    if err != nil {
+        return fmt.Errorf("handlerListFeedFollows: couldn't retrieve feed follows: %w", err)
+    }
+
+    // Handle empty case
+    if len(feedFollows) == 0 {
+        fmt.Println("No feed follows found for this user.")
+        return nil
+    }
+
+    // Print results
+    fmt.Printf("Feed follows for user %s:\n", currentUser.Name.String)
+    for _, ff := range feedFollows {
+        fmt.Printf("* %s\n", ff.FeedName)
+    }
+
+    return nil
+}
+
+// printFeedFollow displays formatted information about a feed follow relationship,
+// showing the username and feed name in a consistent format.
+func printFeedFollow(username string, feedname string) {
+	fmt.Printf("* User:          %s\n", username)
+	fmt.Printf("* Feed:          %s\n", feedname)
+}
+
+// printFeed displays detailed information about a feed and its associated user,
+// including ID, timestamps, name, URL, and creator.
+func printFeed(feed database.Feed, user database.User) {
+	fmt.Printf("* ID:            %s\n", feed.ID)
+	fmt.Printf("* Created:       %v\n", feed.CreatedAt)
+	fmt.Printf("* Updated:       %v\n", feed.UpdatedAt)
+	fmt.Printf("* Name:          %s\n", feed.Name)
+	fmt.Printf("* URL:           %s\n", feed.Url)
+	fmt.Printf("* User:          %s\n", user.Name.String)
+}
+
+// printUser displays detailed information about a user including ID, timestamps, and name.
+func printUser(user database.User){
+    fmt.Printf("* ID:            %s\n", user.ID)
+	fmt.Printf("* Created:       %v\n", user.CreatedAt)
+	fmt.Printf("* Updated:       %v\n", user.UpdatedAt)
+	fmt.Printf("* Name:          %s\n", user.Name.String)
+}
+
 
 
 
@@ -376,6 +506,11 @@ func main() {
     cmds.register("addfeed", handlerAddFeed)
     // Register "feeds" cmd which retrieves all the feeds for the current user
     cmds.register("feeds", handlerGetFeeds)
+    // Register "follow" cmd, which creates a feed follow entry with the current user
+    cmds.register("follow", handlerFollow)
+    // Register "following" cmd, which retrieves and displays all feeds that the current user
+    cmds.register("following", handlerListFeedFollows)
+
 
 
 	// Get command-line arguments.
