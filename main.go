@@ -75,7 +75,7 @@ func handlerLogin(stPtr *state, cmd command) error {
 
     // Check that exactly one argument was passed (the username). If not, return an error.
     if len(cmd.Args) != 1 {
-        return errors.New("login handler expects a single argument, the username")
+        return errors.New("handlerLogin: expects a single argument, the username")
     }
 
     // Try to fetch the user by name from the database.
@@ -93,14 +93,14 @@ func handlerLogin(stPtr *state, cmd command) error {
     // If we see another error (for example, a database connection error),
     // return it so it can be handled or logged elsewhere.
     if err != nil {
-        return err
+        return fmt.Errorf("handlerLogin: error fetching user: %w", err)
     }
 
     // If we found the user, set them as the current user in the config file.
     // SetUser should persist this change.
     err = stPtr.cfgPtr.SetUser(cmd.Args[0])
     if err != nil {
-        return err
+        return fmt.Errorf("handlerLogin: error setting current user: %w", err)
     }
 
     // Helpful for debugging: print out which user has been set.
@@ -115,7 +115,7 @@ func handlerRegister(stPtr *state, cmd command) error {
 
     // Make sure a username was provided and only one argument is present.
     if len(cmd.Args) != 1 {
-        return errors.New("register handler expects a single argument, the name of the user to register")
+        return errors.New("handlerRegister: expects a single argument, the username to register")
     }
 
     // Check if a user with this name already exists in the db.
@@ -130,7 +130,7 @@ func handlerRegister(stPtr *state, cmd command) error {
     }
     // If the error is something other than "no rows found", it's an actual db error, return it.
     if !errors.Is(err, sql.ErrNoRows) {
-        return err
+        return fmt.Errorf("handlerRegister: error checking if user exists: %w", err)
     }
 
     // No user was found with given name, proceed to register a new user.
@@ -144,12 +144,15 @@ func handlerRegister(stPtr *state, cmd command) error {
         },
     )
     if err != nil {
-        return err
+        return fmt.Errorf("handlerRegister: error creating user: %w", err)
     }
 
     // After successful registration, set this new user as current. 
     // SetUser should update the config file as well.
-    stPtr.cfgPtr.SetUser(newUser.Name.String)
+    err = stPtr.cfgPtr.SetUser(newUser.Name.String)
+    if err != nil {
+        return fmt.Errorf("handlerRegister: error setting current user: %w", err)
+    }
 
     // Print out the new user details for your own debugging.
     fmt.Printf("DBG: User created: %v\n", newUser)
@@ -166,8 +169,7 @@ func handlerReset(stPtr *state, cmd command) error {
     err := stPtr.dbPtr.DeleteUsers(context.Background()) // Execute the DELETE
 
     if err != nil {
-        // Wrap error: preserves "connection refused" or "syntax error" details
-        return fmt.Errorf("couldn't delete all users in 'users' table: %w", err)  
+        return fmt.Errorf("handlerReset: couldn't delete all users in 'users' table: %w", err)  
     }
 
     // Success message: confirms operation completed
@@ -183,10 +185,8 @@ func handlerReset(stPtr *state, cmd command) error {
 func handlerGetUsers(stPtr *state, cmd command) error{
 
     userNames, err := stPtr.dbPtr.GetUsers(context.Background())
-
     if err != nil {
-        // Wrap error: preserves "connection refused" or "syntax error" details
-        return fmt.Errorf("couldn't retrieve all user names in 'users' table: %w", err)  
+        return fmt.Errorf("handlerGetUsers: couldn't retrieve all user names in 'users' table: %w", err)  
     }
 
     for _, user := range userNames{
@@ -266,8 +266,8 @@ func handlerAgg(stPtr *state, cmd command) error{
 
     // Fetch the RSS feed from the specified URL using our fetchFeed function
     rssFeedPtr, err := fetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
-    if err != nil{
-        return fmt.Errorf("error fetching the feed before agg: %w", err)
+    if err != nil {
+        return fmt.Errorf("handlerAgg: error fetching the feed: %w", err)
     }
 
     // Print the entire RSS feed struct to console as required by assignment
@@ -276,6 +276,45 @@ func handlerAgg(stPtr *state, cmd command) error{
     return nil
 }
 
+// handlerAddFeed creates a new RSS feed record in the database, associated with the
+// currently logged-in user. It expects exactly two arguments: the feed's name and its URL.
+// On success, prints the new feed's details. Returns an error if user lookup or feed
+// creation fails, or if arguments are missing.
+func handlerAddFeed(stPtr *state, cmd command) error {
+
+    // Ensure feed name and URL are provided
+    if len(cmd.Args) != 2 {
+        return errors.New("handlerAddFeed: expects two arguments: the feed's name and URL")
+    }
+
+    // Fetch the current user by user name in config
+    currentUser, err := stPtr.dbPtr.GetUser(
+        context.Background(),
+        sql.NullString{String: stPtr.cfgPtr.CurrentUserName, Valid: true},
+    )
+    if err != nil {
+        return fmt.Errorf("handlerAddFeed: error retrieving the current user: %w", err)
+    }
+
+    // Create and associate the new feed with the current user
+    newFeed, err := stPtr.dbPtr.CreateFeed(
+        context.Background(),
+        database.CreateFeedParams{
+            ID:        uuid.New(),
+            CreatedAt: time.Now(),
+            UpdatedAt: time.Now(),
+            Name:      cmd.Args[0],
+            Url:       cmd.Args[1],
+            UserID:    uuid.NullUUID{UUID: currentUser.ID, Valid: true},
+        },
+    )
+    if err != nil {
+        return fmt.Errorf("handlerAddFeed: failed to create new feed: %w", err)
+    }
+
+    fmt.Println("New feed has been created:", newFeed)
+    return nil
+}
 
 func main() {
 	// Read configuration from file.
@@ -307,6 +346,8 @@ func main() {
     cmds.register("users", handlerGetUsers)
     // Register "agg" cmd to aggerage the retrieved feed and print it.
     cmds.register("agg", handlerAgg)
+    // Register "addfeed" to be able to add feed from given url to current logged in user
+    cmds.register("addfeed", handlerAddFeed)
 
 
 	// Get command-line arguments.
