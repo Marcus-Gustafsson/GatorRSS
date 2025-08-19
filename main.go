@@ -137,6 +137,20 @@ func handlerRegister(stPtr *state, cmd command) error {
     return nil
 }
 
+// handlerRegister creates a new user in the database with the given username
+// and sets the new user as current in the config.
+// If the username already exist the process exits with code 1.
+func reset(stPtr *state, cmd command) error {
+    err := stPtr.dbPtr.DeleteUsers(context.Background())
+    if err != nil{
+        fmt.Println("error trying to delete all records in users table...")
+        os.Exit(1)
+    }
+    fmt.Println("All records in users table has been purged succesfully!")
+    return nil
+
+}
+
 
 func main() {
 	// Read configuration from file.
@@ -162,6 +176,8 @@ func main() {
 	cmds.register("login", handlerLogin)
 	// Register the register handler.
 	cmds.register("register", handlerRegister)
+    // Register "reset" cmd to clean users table
+    cmds.register("reset", reset)
 
 
 	// Get command-line arguments.
