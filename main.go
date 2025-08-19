@@ -3,11 +3,15 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"time"
+    "html"
 
 	"github.com/Marcus-Gustafsson/GatorRSS/internal/config"
 	"github.com/Marcus-Gustafsson/GatorRSS/internal/database"
@@ -30,6 +34,22 @@ type command struct{
 // cmds stores available CLI command handlers/functions mapped by command name.
 type cmds struct{
     FunctionMap map[string]func(*state, command) error
+}
+
+type RSSFeed struct {
+	Channel struct {
+		Title       string    `xml:"title"`
+		Link        string    `xml:"link"`
+		Description string    `xml:"description"`
+		Item        []RSSItem `xml:"item"`
+	} `xml:"channel"`
+}
+
+type RSSItem struct {
+	Title       string `xml:"title"`
+	Link        string `xml:"link"`
+	Description string `xml:"description"`
+	PubDate     string `xml:"pubDate"`
 }
 
 // run executes the given command using the associated handler, if it exists.
@@ -113,7 +133,7 @@ func handlerRegister(stPtr *state, cmd command) error {
         return err
     }
 
-    // No user was found with this name, so we proceed to register a new user.
+    // No user was found with given name, proceed to register a new user.
     newUser, err := stPtr.dbPtr.CreateUser(
         context.Background(),
         database.CreateUserParams{
@@ -157,6 +177,106 @@ func handlerReset(stPtr *state, cmd command) error {
 }
 
 
+// handlerGetUsers retrieves all registered users from the database
+// and prints them to the console. It marks the currently logged-in user
+// with "(current)". Returns an error if the user retrieval fails.
+func handlerGetUsers(stPtr *state, cmd command) error{
+
+    userNames, err := stPtr.dbPtr.GetUsers(context.Background())
+
+    if err != nil {
+        // Wrap error: preserves "connection refused" or "syntax error" details
+        return fmt.Errorf("couldn't retrieve all user names in 'users' table: %w", err)  
+    }
+
+    for _, user := range userNames{
+        if user.Valid{
+            if stPtr.cfgPtr.CurrentUserName == user.String{
+                fmt.Printf("* %v (current)\n", user.String)
+            }else{
+                fmt.Printf("* %v\n", user.String)
+            }
+        }
+    }
+
+    return nil
+}
+
+
+// fetchFeed retrieves an RSS feed from the given URL and parses it into an RSSFeed struct.
+// It handles HTTP requests with proper context, sets required headers, and processes XML data.
+func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error){
+
+    // Create a new HTTP client with timeout to prevent hanging on slow servers
+    client := &http.Client{
+        Timeout: time.Second * 10, // Timeout for each requests
+    }
+
+    // Create new GET request with context, Feedurl and no body (nil)
+    request, err := http.NewRequestWithContext(ctx, "GET", feedURL, nil)
+    if err != nil {
+        return nil, fmt.Errorf("error creating request: %w", err)
+    }
+
+    // Set User agent header to identify our Go program to the server
+    request.Header.Add("User-Agent", "gator")
+
+    // Actually send the custom request with the created client
+    response, err := client.Do(request)
+    if err != nil {
+        return nil, fmt.Errorf("error sending the request: %w", err)
+    }
+    defer response.Body.Close()
+
+    // Read the response body into memory so we can later parse/unmarshal it
+    body, err := io.ReadAll(response.Body)
+    if err != nil {
+        return nil, fmt.Errorf("error reading response body: %w", err)
+    }
+
+    // Create a placeholder pointer variable for the struct that will hold the data in the response body
+    rssFeedPtr := &RSSFeed{}
+
+    // Use xml.unmarshal due to struct expecting xml formatting (not JSON in this case.)
+    err = xml.Unmarshal(body, rssFeedPtr)
+    if err != nil{
+        return nil, fmt.Errorf("error unmarshaling response body into RSSFeed struct: %w", err)
+    }
+
+    // Why we do this: XML often contains "escaped" characters like &amp; instead of &.
+    // html.UnescapeString converts these back to normal readable characters.
+    // We do this for titles and descriptions so they display properly to users.
+
+    // Unescape HTML entities in the main channel fields for proper display
+    rssFeedPtr.Channel.Title = html.UnescapeString(rssFeedPtr.Channel.Title)
+    rssFeedPtr.Channel.Description = html.UnescapeString(rssFeedPtr.Channel.Description)
+
+    // Loop through each item and unescape HTML entities in their fields
+    for i := range rssFeedPtr.Channel.Item {
+        rssFeedPtr.Channel.Item[i].Title = html.UnescapeString(rssFeedPtr.Channel.Item[i].Title)
+        rssFeedPtr.Channel.Item[i].Description = html.UnescapeString(rssFeedPtr.Channel.Item[i].Description)
+    }
+
+    return rssFeedPtr, nil
+}
+
+// handlerAgg handles the "agg" command by fetching and displaying an RSS feed.
+// This is a test function to verify our RSS parsing works correctly.
+func handlerAgg(stPtr *state, cmd command) error{
+
+    // Fetch the RSS feed from the specified URL using our fetchFeed function
+    rssFeedPtr, err := fetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
+    if err != nil{
+        return fmt.Errorf("error fetching the feed before agg: %w", err)
+    }
+
+    // Print the entire RSS feed struct to console as required by assignment
+    fmt.Println("Result:", *rssFeedPtr)
+
+    return nil
+}
+
+
 func main() {
 	// Read configuration from file.
 	cfg, err := config.Read()
@@ -183,6 +303,10 @@ func main() {
 	cmds.register("register", handlerRegister)
     // Register "reset" cmd to clean users table
     cmds.register("reset", handlerReset)
+    // Register "users" cmd to retrieve all user names
+    cmds.register("users", handlerGetUsers)
+    // Register "agg" cmd to aggerage the retrieved feed and print it.
+    cmds.register("agg", handlerAgg)
 
 
 	// Get command-line arguments.
