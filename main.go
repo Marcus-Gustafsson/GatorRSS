@@ -137,17 +137,22 @@ func handlerRegister(stPtr *state, cmd command) error {
     return nil
 }
 
-// handlerRegister creates a new user in the database with the given username
-// and sets the new user as current in the config.
-// If the username already exist the process exits with code 1.
-func reset(stPtr *state, cmd command) error {
-    err := stPtr.dbPtr.DeleteUsers(context.Background())
-    if err != nil{
-        fmt.Println("error trying to delete all records in users table...")
-        os.Exit(1)
+// handlerReset deletes all users from the users table in the database,
+// effectively resetting the application's state for testing or development.
+// Prints a confirmation message on success. Returns an error if the deletion
+// fails, in which case a non-zero exit code will be produced by main().
+func handlerReset(stPtr *state, cmd command) error {
+
+    err := stPtr.dbPtr.DeleteUsers(context.Background()) // Execute the DELETE
+
+    if err != nil {
+        // Wrap error: preserves "connection refused" or "syntax error" details
+        return fmt.Errorf("couldn't delete all users in 'users' table: %w", err)  
     }
-    fmt.Println("All records in users table has been purged succesfully!")
-    return nil
+
+    // Success message: confirms operation completed
+    fmt.Println("Users table reset successfully!")  
+    return nil  // Exit code 0: tells automation "success"
 
 }
 
@@ -177,7 +182,7 @@ func main() {
 	// Register the register handler.
 	cmds.register("register", handlerRegister)
     // Register "reset" cmd to clean users table
-    cmds.register("reset", reset)
+    cmds.register("reset", handlerReset)
 
 
 	// Get command-line arguments.
@@ -197,6 +202,7 @@ func main() {
 
 	// Run the command; print any errors and exit on failure.
     err = cmds.run(&st, cmd)
+
 	if err != nil {
 		log.Fatal(err)
 	}
