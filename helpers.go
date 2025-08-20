@@ -1,13 +1,11 @@
 package main
 
 import (
-    "fmt"
-    "github.com/Marcus-Gustafsson/gator/internal/database"
 	"context"
 	"database/sql"
+	"fmt"
+	"github.com/Marcus-Gustafsson/gator/internal/database"
 )
-
-
 
 // printFeedFollow displays formatted information about a feed follow relationship,
 // showing the username and feed name in a consistent format.
@@ -29,13 +27,12 @@ func printFeed(feed database.Feed, user database.User) {
 }
 
 // printUser displays detailed information about a user including ID, timestamps, and name.
-func printUser(user database.User){
-    fmt.Printf("* ID:            %s\n", user.ID)
+func printUser(user database.User) {
+	fmt.Printf("* ID:            %s\n", user.ID)
 	fmt.Printf("* Created:       %v\n", user.CreatedAt)
 	fmt.Printf("* Updated:       %v\n", user.UpdatedAt)
 	fmt.Printf("* Name:          %s\n", user.Name.String)
 }
-
 
 // middlewareLoggedIn wraps command handlers that require user authentication.
 // It takes a handler expecting a logged-in user parameter and returns a standard
@@ -43,6 +40,10 @@ func printUser(user database.User){
 // passes it to the wrapped handler, eliminating repetitive user lookup code.
 func middlewareLoggedIn(handler func(stPtr *state, cmd command, user database.User) error) func(*state, command) error {
 	return func(stPtr *state, cmd command) error {
+		if stPtr.cfgPtr.CurrentUserName == "" {
+			return fmt.Errorf("no current user configured; run 'login' or 'register'")
+		}
+
 		user, err := stPtr.dbPtr.GetUser(context.Background(), sql.NullString{String: stPtr.cfgPtr.CurrentUserName, Valid: true})
 		if err != nil {
 			return err
@@ -51,5 +52,3 @@ func middlewareLoggedIn(handler func(stPtr *state, cmd command, user database.Us
 		return handler(stPtr, cmd, user)
 	}
 }
-
-
