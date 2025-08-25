@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+
 	"github.com/Marcus-Gustafsson/gator/internal/database"
+	"github.com/google/uuid"
 )
 
 // handlerBrowse retrieves and displays posts for the current user with an optional limit
@@ -22,10 +24,7 @@ func handlerBrowse(stPtr *state, cmd command, user database.User) error {
 		}
 	}
 
-	posts, err := stPtr.dbPtr.GetPostsForUser(context.Background(), database.GetPostsForUserParams{
-		UserID: user.ID,
-		Limit:  int32(limit),
-	})
+	posts, err := stPtr.getPostsForUser(user.ID, limit)
 	if err != nil {
 		return fmt.Errorf("handlerBrowse: couldn't retrieve posts for user: %w", err)
 	}
@@ -40,4 +39,17 @@ func handlerBrowse(stPtr *state, cmd command, user database.User) error {
 	}
 
 	return nil
+}
+
+// getPostsForUser retrieves posts for the given user up to the specified limit.
+// It delegates to the database query and returns any error encountered.
+func (st *state) getPostsForUser(userID uuid.UUID, limit int) ([]database.GetPostsForUserRow, error) {
+	posts, err := st.dbPtr.GetPostsForUser(context.Background(), database.GetPostsForUserParams{
+		UserID: userID,
+		Limit:  int32(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return posts, nil
 }
